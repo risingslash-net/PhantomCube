@@ -1,4 +1,5 @@
 using System.IO.Pipes;
+using System.Threading.Tasks.Dataflow;
 
 namespace PhantomCube
 {
@@ -24,10 +25,14 @@ namespace PhantomCube
         public int MaxDebugLines = 100;
         private bool shutdown = false;
 
+        private Thread ReaderThread;
+
         public FormMain()
         {
             InitializeComponent();
             messagesReceived = new List<string>();
+            ReaderThread = new Thread(new ThreadStart(ThreadReadMessagesFromPipe));
+            ReaderThread.Start();
         }
 
         private void btnSendDebugMessage_Click(object sender, EventArgs e)
@@ -95,18 +100,25 @@ namespace PhantomCube
                     reader = new StreamReader(pipeServPhantomFromMilla);
                 }
 
-                if (!reader.EndOfStream)
+                try
                 {
-                    messagesReceived.Add(reader.ReadLine());
-                    //AddDebugLine("Received: " + text);
+                    if (!reader.EndOfStream)
+                    {
+                        messagesReceived.Add(reader.ReadLine());
+                        //AddDebugLine("Received: " + text);
+                    }
+                    else
+                    {
+                        AddDebugLine("End of stream...");
+                    }
                 }
-                else
+                catch
                 {
-                    AddDebugLine("End of stream...");
+                    
                 }
             }
 
-            
+            return;
         }
 
         private void checkBox1_CheckedChanged(object sender, EventArgs e)
@@ -234,6 +246,19 @@ namespace PhantomCube
 
         private void FormMain_FormClosed(object sender, FormClosedEventArgs e)
         {
+            if (ReaderThread != null)
+            {
+                shutdown = true;
+                // Forcefeed a read to encourage shutdown. If trying to handle normal communication, don't imitate this.
+                if (pipeServPhantomFromMilla != null)
+                {
+                    var shutdownWriter = new StreamWriter(pipeServPhantomFromMilla);
+                    shutdownWriter.WriteLine("SHUTDOWN");
+                    shutdownWriter.Flush();
+                    shutdownWriter.Close();
+                }
+            }
+
             if (reader != null) { reader.Close(); }
             if (writer != null) { writer.Close(); }
 
